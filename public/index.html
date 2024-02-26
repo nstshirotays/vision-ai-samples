@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ポーズ推定</title>
+    <style>
+        /* ページ全体の基本的なスタイル設定 */
+        body {
+            font-family: helvetica, arial, sans-serif; /* フォントスタイルをHelvetica, Arial, sans-serifに設定 */
+            margin: 2em; /* 全体のマージンを2emに設定 */
+            color: #3D3D3D; /* テキストの色をダークグレーに設定 */
+        }
+        
+        /* video要素のスタイル設定 */
+        video {
+            clear: both; /* 前の要素がフロートしている場合にクリア */
+            display: block; /* ブロックレベル要素として表示 */
+        }
+        
+        /* 特定の要素を非表示にするスタイル */
+        .removed {
+            display: none; /* 要素を完全に非表示にする */
+        }
+
+        /* 要素を薄く表示するためのスタイル */
+        .invisible {
+            opacity: 0.2; /* 透明度を0.2に設定し、要素を薄く表示 */
+        }
+
+        /* カメラコンテナのスタイル設定 */
+        #camera-container {
+            position: relative; /* 相対位置指定：内部の絶対位置要素の基準となる */
+            width: 640px; /* コンテナの幅を640ピクセルに設定 */
+            height: 480px; /* コンテナの高さを480ピクセルに設定 */
+        }
+
+        /* ウェブカメラとキャンバスのスタイル設定 */
+        #webcam, #canvas {
+            position: absolute; /* 絶対位置指定：カメラコンテナ内での位置指定 */
+            top: 0; /* コンテナの上端に配置 */
+            left: 0; /* コンテナの左端に配置 */
+        }
+
+        /* キャンバスの追加スタイル設定 */
+        #canvas {
+            z-index: 10; /* キャンバスを他の要素より前面に表示 */
+        }
+    </style>
+</head>
+<body>
+    <h1>ポーズ推定</h1>
+    <select id="cameraSelect"></select>
+    <button id="webcamButton">開始</button>
+    <div id="camera-container">
+      <video id="webcam" width="640" height="480" autoplay ></video>
+      <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+  
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+    <script>
+        // ----------------------------------------
+//         変数の宣言と初期設定
+// ----------------------------------------
+// Webカメラと予測領域の要素を取得
+const video = document.getElementById('webcam');
+const enableWebcamButton = document.getElementById('webcamButton');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// モデルとロード状態の追跡用変数
+var modelHasLoaded = false;
+var model = undefined;
+
+// ----------------------------------------
+//        　認識関連の関数定義
+// ----------------------------------------
+// ポーズを検出する非同期関数
+async function predictWebcam() {
+    // PoseNetモデルを使用してビデオからシングルポーズを推定
+    const pose = await model.estimateSinglePose(video, {
+        flipHorizontal: false  // ビデオを水平に反転させない
+    });
+
+    // キャンバスをクリア
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // 検出されたポーズを描画
+    drawPose(pose);
+    // 次のフレームのポーズ検出のために関数を再帰的に呼び出し
+    requestAnimationFrame(predictWebcam);
+}
+
+// 検出されたポーズをキャンバスに描画する関数
+function drawPose(pose) {
+    // ポーズの信頼度が一定の閾値以上の場合に描画を実行
+    if (pose.score >= 0.1) {
+        // ポーズの各キーポイントを反復処理
+        for (let keypoint of pose.keypoints) {
+            // キーポイントの信頼度が閾値以上の場合に描画
+            if (keypoint.score >= 0.2) {
+                // キャンバス上に円を描画してキーポイントを表現
+                ctx.beginPath();
+                ctx.arc(keypoint.position.x, keypoint.position.y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = "red";  // 円の塗りつぶし色を赤に設定
+                ctx.fill();
+            }
+        }
+    }
+}
+
+// ----------------------------------------
+//      認識ボタンが押された時の処理
+// ----------------------------------------
+
+// Webカメラを有効化し、認識処理を開始
+function enableCam(event) {
+  if (!modelHasLoaded) {
+    return;  // モデルがまだロードされていない場合は何もしない
+  }
+
+  // ボタンを非表示にする
+  event.target.classList.add('removed');  
+  
+  // getUserMediaの設定
+  const constraints = {
+    video: true
+  };
+
+  // Webカメラのストリームをアクティブ化
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    video.srcObject = stream;
+    // データがロードされたら予測を開始
+    video.addEventListener('loadeddata', predictWebcam);
+  });
+}
+
+// ----------------------------------------
+//            カメラ関連の処理
+// ----------------------------------------
+
+// ブラウザがgetUserMediaをサポートしているかチェック
+function hasGetUserMedia() {
+  return !!(navigator.mediaDevices &&
+    navigator.mediaDevices.getUserMedia);
+}
+
+// 利用可能なカメラを取得してセレクトボックスに追加する関数
+function getCameras() {
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    const videoInputDevices = devices.filter(device => device.kind === 'videoinput');
+    const cameraSelect = document.getElementById('cameraSelect');
+    videoInputDevices.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.text = device.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+  });
+}
+
+// カメラを選択したときに呼ばれる関数
+function switchCamera() {
+  const cameraSelect = document.getElementById('cameraSelect');
+  const selectedCameraId = cameraSelect.value;
+  const constraints = {
+    video: { deviceId: { exact: selectedCameraId } }
+  };
+
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    video.srcObject = stream;
+    video.addEventListener('loadeddata', predictWebcam);
+  });
+}
+
+// ----------------------------------------
+//           メイン処理
+// ----------------------------------------
+// 初期状態で「認識開始」ボタンを無効化
+enableWebcamButton.disabled = true;   
+
+// posenetモデルをロード（非同期）
+posenet.load().then(function (loadedModel) {
+  model = loadedModel;
+  modelHasLoaded = true;  // モデルがロードされたことを示すフラグを設定
+  enableWebcamButton.disabled = false; // モデルロード後、ボタンを有効化
+});
+
+// Webカメラがサポートされている場合、ボタンにイベントリスナーを追加
+if (hasGetUserMedia()) {
+  getCameras();
+  enableWebcamButton.addEventListener('click', enableCam);
+} else {
+  // ブラウザがgetUserMediaをサポートしていない場合、警告を表示
+  console.warn('getUserMedia() is not supported by your browser');
+}
+
+// セレクトボックスのイベントリスナーを設定
+document.getElementById('cameraSelect').addEventListener('change', switchCamera);
+
+    </script>
+  </body>
+</hmtl>
