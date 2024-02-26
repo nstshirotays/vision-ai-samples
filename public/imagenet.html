@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像1000分類</title>
+    <style>
+    </style>
+</head>
+<body>
+    <h1>画像1000分類</h1>
+    <section id="demos">
+      <div class="webcam">
+        <select id="cameraSelect"></select>
+        <button id="webcamButton">開始</button>
+        <video id="webcam" autoplay></video>
+        <p id="webcamPredictions"></p>
+      </div>
+    </section>
+    <a href='/'>戻る</a>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0/dist/tf.min.js" type="text/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.0.4"></script>
+    <script>
+// ----------------------------------------
+//         変数の宣言と初期設定
+// ----------------------------------------
+// Webカメラと予測テキストの要素を取得
+const video = document.getElementById('webcam');
+const webcamPredictions = document.getElementById('webcamPredictions');
+const enableWebcamButton = document.getElementById('webcamButton');
+
+// モデルとロード状態の追跡用変数
+var modelHasLoaded = false;
+var model = undefined;
+
+
+// ----------------------------------------
+//        　認識関連の関数定義
+// ----------------------------------------
+
+// Webカメラの画像を1000分類する
+function predictWebcam() {
+  // モデルを使って映像を分類
+  model.classify(video).then(function (predictions) {
+    // 分類結果を表示
+    webcamPredictions.innerText = predictions[0].className;
+    // 次のフレームの分類のためにこの関数を3秒後に再度呼び出す
+    setTimeout(predictWebcam, 3000);
+  });
+}
+
+// ----------------------------------------
+//      認識ボタンが押された時の処理
+// ----------------------------------------
+
+// Webカメラを有効化し、認識処理を開始
+function enableCam(event) {
+  if (!modelHasLoaded) {
+    return;  // モデルがまだロードされていない場合は何もしない
+  }
+
+  // ボタンを非表示にする
+  event.target.classList.add('removed');  
+  
+  // getUserMediaの設定
+  const constraints = {
+    video: true
+  };
+
+  // Webカメラのストリームをアクティブ化
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    video.srcObject = stream;
+    // データがロードされたら予測を開始
+    video.addEventListener('loadeddata', predictWebcam);
+  });
+}
+
+// ----------------------------------------
+//            カメラ関連の処理
+// ----------------------------------------
+
+// ブラウザがgetUserMediaをサポートしているかチェック
+function hasGetUserMedia() {
+  return !!(navigator.mediaDevices &&
+    navigator.mediaDevices.getUserMedia);
+}
+
+// 利用可能なカメラを取得してセレクトボックスに追加する関数
+function getCameras() {
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    const videoInputDevices = devices.filter(device => device.kind === 'videoinput');
+    const cameraSelect = document.getElementById('cameraSelect');
+    videoInputDevices.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.text = device.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+  });
+}
+
+// カメラを選択したときに呼ばれる関数
+function switchCamera() {
+  const cameraSelect = document.getElementById('cameraSelect');
+  const selectedCameraId = cameraSelect.value;
+  const constraints = {
+    video: { deviceId: { exact: selectedCameraId } }
+  };
+
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    video.srcObject = stream;
+    video.addEventListener('loadeddata', predictWebcam);
+  });
+}
+
+// ----------------------------------------
+//           メイン処理
+// ----------------------------------------
+// 初期状態で「認識開始」ボタンを無効化
+enableWebcamButton.disabled = true;   
+
+// MobileNetモデルをロード（非同期）
+mobilenet.load().then(function (loadedModel) {
+  model = loadedModel;
+  modelHasLoaded = true;  // モデルがロードされたことを示すフラグを設定
+  enableWebcamButton.disabled = false; // モデルロード後、ボタンを有効化
+});
+
+// Webカメラがサポートされている場合、ボタンにイベントリスナーを追加
+if (hasGetUserMedia()) {
+  getCameras();
+  enableWebcamButton.addEventListener('click', enableCam);
+} else {
+  // ブラウザがgetUserMediaをサポートしていない場合、警告を表示
+  console.warn('getUserMedia() is not supported by your browser');
+}
+
+// セレクトボックスのイベントリスナーを設定
+document.getElementById('cameraSelect').addEventListener('change', switchCamera);
+
+    </script>
+  </body>
+</hmtl>
